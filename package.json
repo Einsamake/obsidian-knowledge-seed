@@ -1,0 +1,25 @@
+{
+  "name": "obsidian-knowledge-seed",
+  "version": "1.4.0",
+  "private": true,
+  "type": "module",
+  "description": "Evidence-linked knowledge maps from a URL, topic or vault note.",
+  "scripts": {
+    "build": "tsc --noEmit && node esbuild.config.mjs",
+    "test": "tsx --test tests/*.test.ts",
+    "package": "npm run build && node scripts/package.mjs",
+    "demo": "tsx scripts/demo.ts",
+    "check": "npm run build && npm run test"
+  },
+  "dependencies": {
+    "defuddle": "0.19.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "linkedom": "^0.18.0",
+    "obsidian": "1.14.4",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
