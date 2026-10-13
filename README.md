@@ -14,9 +14,9 @@
 
 以下为安装说明，若不想看可以直接丢给AI
 
-最后感谢**GPT6.1Sol Ultra**对这个仓库做出的无私奉献，你夜以继日的努力我都看在眼里(笑
-
 **版本：1.4.0** · Obsidian ≥ 1.6.0 · 已实测 Windows / Obsidian 1.14.4
+
+感谢**GPT6.1Sol Ultra**对这个仓库做出的无私奉献，你夜以继日的努力我都看在眼里(笑
 
 [下载安装包](https://github.com/Einsamake/obsidian-knowledge-seed/releases/latest) · [反馈问题](https://github.com/Einsamake/obsidian-knowledge-seed/issues) · [验证记录](docs/verification.md)
 
