@@ -12,6 +12,7 @@
 
 
 以下若不想看可以直接给AI
+
 **版本：1.4.0** · Obsidian ≥ 1.6.0 · 已实测 Windows / Obsidian 1.14.4
 
 [下载安装包](https://github.com/Einsamake/obsidian-knowledge-seed/releases/latest) · [反馈问题](https://github.com/Einsamake/obsidian-knowledge-seed/issues) · [验证记录](docs/verification.md)
