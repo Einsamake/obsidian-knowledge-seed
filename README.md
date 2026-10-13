@@ -12,10 +12,11 @@
 
 我不清楚有没有同类型的插件，若发现有相似功能的repo，欢迎分享
 
-
 以下若不想看可以直接给AI
 
 **版本：1.4.0** · Obsidian ≥ 1.6.0 · 已实测 Windows / Obsidian 1.14.4
+
+感谢GPT6.1Sol Ultra对这个仓库做出的无私奉献，你昼夜不停的努力我都看在眼里(笑
 
 [下载安装包](https://github.com/Einsamake/obsidian-knowledge-seed/releases/latest) · [反馈问题](https://github.com/Einsamake/obsidian-knowledge-seed/issues) · [验证记录](docs/verification.md)
 
