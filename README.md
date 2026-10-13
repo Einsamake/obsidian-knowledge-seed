@@ -1,4 +1,6 @@
-<img width="800" height="500" alt="demo" src="https://github.com/user-attachments/assets/52f4f090-fc1a-43e6-9003-870a2835de45" /># Knowledge Seed
+<img width="800" height="500" alt="demo" src="https://github.com/user-attachments/assets/52f4f090-fc1a-43e6-9003-870a2835de45" />
+
+# Knowledge Seed
 
 从知识主题、网页或已有笔记出发在 **Obsidian 原生关系图**中探索相关概念
 
