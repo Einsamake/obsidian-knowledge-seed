@@ -12,15 +12,18 @@ export interface ExplorationPolicy {
 /** Rule weights also determine which supplemental terms receive the bounded
  * public search queries. They never increase the existing request budget. */
 export function explorationDirectionTerms(raw: Options): string[] {
-  const options = clampOptions(raw);
-  return [...new Set([...(options.directionRules ?? []).sort((a,b) => b.weight - a.weight).map(rule => rule.term), ...options.searchTerms])];
+  return directionTerms(clampOptions(raw));
+}
+function directionTerms(options: Options): string[] {
+  const rules = [...(options.directionRules ?? [])].sort((a,b) => b.weight - a.weight);
+  return [...new Set([...rules.map(rule => rule.term), ...options.searchTerms])];
 }
 
 /** Deterministic lexical allocation, not a semantic relevance claim. The
  * configured depth/link limits remain ceilings under every strategy. */
 export function explorationPolicy(title: string, context: string, distance: number, raw: Options, center = ''): ExplorationPolicy {
   const options = clampOptions(raw), hop = Math.max(0, Math.floor(distance));
-  const strategy = options.explorationStrategy ?? 'radial', directions = explorationDirectionTerms(options);
+  const strategy = options.explorationStrategy ?? 'radial', directions = directionTerms(options);
   const directional = directions.length > 0;
   const rank = scoreCandidate('', title, context, { searchTerms: directions, relevance: 'balanced' });
   // Center context occurs in nearly every link quotation on a seed page. Use
@@ -37,8 +40,7 @@ export function explorationPolicy(title: string, context: string, distance: numb
     depthCap = focused ? options.depth : Math.min(options.depth, Math.max(1, Math.floor(options.depth / 3)));
     decay = focused ? 0.5 : 1;
     factor = hop === 0 ? 1 : focused ? 0.75 : 0.2;
-  } else if (strategy === 'breadth') { depthCap = options.depth; decay = 0; factor = 1; }
-  else if (strategy === 'depth') { depthCap = options.depth; decay = 0; factor = 1; }
+  } else if (strategy === 'breadth' || strategy === 'depth') { depthCap = options.depth; decay = 0; factor = 1; }
   else if (strategy === 'custom') {
     depthCap = Math.min(options.depth, (options.offDirectionDepth ?? 1) + (focused ? options.directionDepthBoost ?? 2 : 0));
     decay = options.breadthDecay ?? 1; factor = 1;

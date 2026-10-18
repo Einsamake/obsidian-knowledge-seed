@@ -37,6 +37,18 @@ const node = (id:string,depth:number,kind:GraphNode['kind']='concept',title=id):
 function graph(nodes:GraphNode[]):KnowledgeGraph {
   return {version:1,seed:nodes[0].title,createdAt:'2026-10-10T00:00:00Z',nodes,edges:[],warnings:[],stats:{pagesAttempted:0,notesScanned:0,requests:0}};
 }
+
+test('successful continuation clears only the obsolete empty-source hint and preserves historical failures',()=>{
+  const hint='尚未读取到可核验的来源正文；已有概念与候选来源仍保留。';
+  const base=graph([node('seed-root',0,'seed')]);base.warnings=[hint,'来源读取失败：HTTP 503'];
+  const next=graph([node('seed-root',0,'seed'),{...node('web-source',1,'web'),status:'retrieved',bodyAvailable:true,locator:'https://example.org/source'}]);
+  const before=JSON.stringify(base),merged=mergeLiveGraph(base,next);
+  assert.equal(merged.warnings.includes(hint),false);
+  assert.ok(merged.warnings.includes('来源读取失败：HTTP 503'));
+  assert.equal(JSON.stringify(base),before);
+  const stillEmpty=mergeLiveGraph(base,graph([node('seed-root',0,'seed')]));
+  assert.ok(stillEmpty.warnings.includes(hint));
+});
 function map():LiveMapRecord {
   const value=graph([node('seed-root',0,'seed','中心'),node('concept-left',1),node('concept-right',1),
     node('concept-only',2),node('concept-shared',2),node('concept-shared-child',3)]);

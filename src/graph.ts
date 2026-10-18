@@ -2,6 +2,7 @@ import { isNoiseLabel } from './titles';
 import type { DiscoveryConfig } from './workflow';
 import type { ArticleContent } from './article';
 export type NodeKind = 'seed' | 'web' | 'note' | 'concept';
+export const NO_RETRIEVED_SOURCE_WARNING = '尚未读取到可核验的来源正文；已有概念与候选来源仍保留。';
 export type Relation = 'seed_source' | 'links_to' | 'mentions' | 'search_match' | 'keyword_match' | 'wiki_link';
 export interface NodeReading {
   state: 'pending' | 'reading' | 'ready' | 'failed' | 'no_match' | 'excluded';

@@ -14,11 +14,11 @@
 
 以下为安装说明，若不想看可以直接丢给AI
 
-**版本：1.4.0** · Obsidian ≥ 1.6.0 · 已实测 Windows / Obsidian 1.14.4
+**版本：1.4.2** · Obsidian ≥ 1.6.0 · 已实测 Windows / Obsidian 1.14.4
 
 感谢**GPT6.1Sol Ultra**对这个仓库做出的无私奉献，你夜以继日的努力我都看在眼里(笑
 
-[下载安装包](https://github.com/Einsamake/obsidian-knowledge-seed/releases/latest) · [反馈问题](https://github.com/Einsamake/obsidian-knowledge-seed/issues) · [验证记录](docs/verification.md)
+[下载安装包](https://github.com/Einsamake/obsidian-knowledge-seed/releases/latest) · [更新记录](https://github.com/Einsamake/obsidian-knowledge-seed/blob/main/CHANGELOG.md) · [反馈问题](https://github.com/Einsamake/obsidian-knowledge-seed/issues) · [验证记录](docs/verification.md)
 
 ## 目录
 
@@ -42,7 +42,7 @@
 ### 1.1 下载
 
 1. 打开 [最新发布页](https://github.com/Einsamake/obsidian-knowledge-seed/releases/latest)，展开 **Assets**。
-2. 下载 **`knowledge-seed-1.4.0.zip`** 并解压；以后升级下载对应版本的安装 ZIP。
+2. 下载 **`knowledge-seed-1.4.2.zip`** 并解压；以后升级下载对应版本的安装 ZIP。
 
 ### 1.2 放入笔记库
 
@@ -192,6 +192,7 @@
 | 插件列表中找不到 | 检查是否为当前库、是否多套文件夹、三个文件是否齐全；刷新列表或重启 |
 | 开始后仍显示表单 / 预览 | 开启“开始后直接显示关系图”和核心关系图谱；关闭即时显示时需在预览点“保存并打开原生关系图” |
 | 节点少 / 没正文 | 查看侧栏错误、公开网页开关和正文任务是否暂停；用完整名称或方向词代替模糊缩写，失败任务明确重试 |
+| “流形方法”启动即结束 | 升级到 1.4.2 后在旧图点“继续探索”；均衡筛选支持中文“方法 / 技术”后缀的核心词匹配，严格筛选仍要求原词匹配 |
 | 继续探索没有增长 | 看是否达到节点上限或来源耗尽；剪枝、调整方向，或沿感兴趣节点探索 |
 | 图中混入其他起点 | 从“我的知识图谱”打开具体起点；Obsidian 全局图显示整个库 |
 | 同名节点有两个 | 先核对路径和角色；同一实体的插件生成节点可在设置点“预览去重合并”，确认方案后执行 |
@@ -214,7 +215,7 @@ npm ci
 npm run check
 ```
 
-`npm run check` 执行类型检查、构建和测试；`npm run build` 生成 `main.js`。实机验证请准备独立测试库，复制三个运行文件并启用插件。发布前 566 项检查及 Windows 原生操作验证的范围见 [验证记录](docs/verification.md)。
+`npm run check` 执行类型检查、构建和测试；`npm run build` 生成 `main.js`。实机验证请准备独立测试库，复制三个运行文件并启用插件。本版 574 项检查及 Windows 原生操作验证的范围见 [验证记录](docs/verification.md)。
 
 - **参与维护：** [详细交接文档](https://github.com/Einsamake/obsidian-knowledge-seed/blob/main/docs/maintenance-handoff.md)，包括架构、开发流程、验收、发布边界与多会话协作。
 - **发布与许可：** [Releases](https://github.com/Einsamake/obsidian-knowledge-seed/releases) · [MIT](LICENSE) · [第三方许可](THIRD-PARTY-NOTICES.md)。

@@ -4,7 +4,8 @@ import { isNoiseLabel } from './titles';
 export type RelevanceMode = 'strict' | 'balanced' | 'broad';
 export interface RelevanceOptions { relevance?: RelevanceMode; searchTerms?: string[]; excludeTerms?: string[] }
 export function plainSearchSnippet(input: string): string {
-  return input.replace(/<[^>]*>/g, ' ').replace(/&(?:nbsp|#160);/gi, ' ')
+  return input.replace(/<\/?(?:span|b|strong|em|i|mark)(?:\s[^>]*)?>/gi, '')
+    .replace(/<[^>]*>/g, ' ').replace(/&(?:nbsp|#160);/gi, ' ')
     .replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
     .replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
 }
@@ -41,6 +42,17 @@ export function scoreCandidate(query: string, title: string, context: string, op
   }
   const mode = options.relevance ?? 'balanced';
   return { score: best, accepted: mode === 'broad' || (mode === 'strict' ? strongTitle && best >= 7 : best >= 3), reason: 'lexical' };
+}
+/** A topic is not an entity title. Balanced discovery may match the core of a
+ * Chinese method/technique topic; exact body resolution still uses its own guard. */
+export function scoreSearchCandidate(query: string, title: string, context: string, options: RelevanceOptions = {}) {
+  const primary = scoreCandidate(query, title, context, options, 'search');
+  const original = {...primary, expandedTerm: undefined as string | undefined};
+  if (primary.accepted || primary.reason !== 'lexical' || options.relevance === 'strict') return original;
+  const core = /^([\u3400-\u9fff]{2,})(?:方法|技术)$/.exec(normalizeText(query))?.[1];
+  if (!core || /^(?:方法|技术)$/.test(core)) return original;
+  const fallback = scoreCandidate(core, title, context, options, 'search');
+  return fallback.accepted ? {...fallback, expandedTerm: core} : original;
 }
 /** At most six queries per language: main term, exact phrase and four user terms. */
 export function searchQueries(query: string, extra: string[] = []): string[] {

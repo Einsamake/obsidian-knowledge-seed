@@ -5,9 +5,9 @@ const version = JSON.parse(await readFile('manifest.json', 'utf8')).version;
 if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid release version');
 const destination = resolve('dist/knowledge-seed');
 await mkdir(destination, { recursive: true });
-for (const name of ['main.js', 'manifest.json', 'styles.css', 'README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'])
+for (const name of ['main.js', 'manifest.json', 'styles.css', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'])
   await copyFile(name, resolve(destination, name));
-for (const name of ['docs/verification.md', 'docs/parsing-quality.md', 'tests/fixtures/NOTICE.md']) {
+for (const name of ['docs/verification.md', 'docs/parsing-quality.md', 'docs/validation-1.4.1.md', 'docs/validation-1.4.2.md', 'tests/fixtures/NOTICE.md']) {
   const target = resolve(destination, name);
   await mkdir(resolve(target, '..'), { recursive: true });
   await copyFile(name, target);

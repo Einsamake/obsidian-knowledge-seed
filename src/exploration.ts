@@ -1,7 +1,7 @@
 import { Cancelled, checkAbort, clampOptions, fallbackNoteLinks, filterVisibleNoteLinks, visibleNoteContent, MAX_TOTAL_WEB_CHARS, type EngineAdapter, type NoteRef, type Options, type Seed } from './engine';
-import { addEdge, excerptAt, nodeId, normalizeText, usefulConcept, type GraphNode, type KnowledgeGraph, type Relation } from './graph';
+import { addEdge, excerptAt, nodeId, normalizeText, usefulConcept, NO_RETRIEVED_SOURCE_WARNING, type GraphNode, type KnowledgeGraph, type Relation } from './graph';
 import { cleanKnowledgeTitle, isNoiseLabel } from './titles';
-import { excludedContent, plainSearchSnippet, scoreCandidate, searchQueries } from './relevance';
+import { excludedContent, plainSearchSnippet, scoreCandidate, scoreSearchCandidate, searchQueries } from './relevance';
 import { fetchWebDocument, publicUrl, type WebDocument } from './web';
 import { compareExplorationWork, explorationDirectionTerms, explorationPolicy } from './exploration-policy';
 
@@ -242,12 +242,12 @@ export async function exploreConcepts(seed: Seed, adapter: EngineAdapter, raw: O
       for (const item of candidates) {
         await guard(); if (typeof item.title !== 'string') continue;
         const title = item.title, snippet = plainSearchSnippet(typeof item.snippet === 'string' ? item.snippet : '');
-        const rank = scoreCandidate(query, title, `${snippet} ${typeof item.redirecttitle === 'string' ? item.redirecttitle : ''}`, rankingOptions, 'search');
+        const rank = scoreSearchCandidate(query, title, `${snippet} ${typeof item.redirecttitle === 'string' ? item.redirecttitle : ''}`, rankingOptions);
         if (!rank.accepted || isNoiseLabel(title)) continue;
         const url = publicUrl(`https://${language}.wikipedia.org/wiki/${encodeURIComponent(title.replaceAll(' ', '_'))}`);
         const node = addTerm(title, 0, url); if (!node) continue;
         if (node.status !== 'retrieved') node.excerpt = snippet || '公开百科搜索返回的候选名称；尚未读取来源正文。';
-        connect(root, node, 'search_match', `检索词：${phrase}；API 返回标题：${title}${snippet ? '；API 摘要：' + snippet : ''}`,
+        connect(root, node, 'search_match', `检索词：${phrase}；API 返回标题：${title}${rank.expandedTerm ? '；按核心词匹配：' + rank.expandedTerm : ''}${snippet ? '；API 摘要：' + snippet : ''}`,
           '公开百科搜索返回记录，尚未核实正文或语义关系', endpoint);
         schedule(node, 0, snippet);
       }
@@ -305,7 +305,14 @@ export async function exploreConcepts(seed: Seed, adapter: EngineAdapter, raw: O
   if (MAX_TOTAL_WEB_CHARS - retainedChars < 2000) graph.warnings.push('概念来源读取达到 400 万字符总容量，后续概念正文可独立补充。');
   if (graph.stats.requests >= requestBudget) graph.warnings.push('概念探索已达到网络请求预算，保留当前结果。');
   if (scannedNotes >= options.scanLimit && candidates.some(ref => !localReads.has(ref.path))) graph.warnings.push('本轮已有笔记扫描达到上限，保留已发现结果。');
-  if (!graph.nodes.some(node => node.status === 'retrieved')) graph.warnings.push('尚未读取到可核验的来源正文；已有概念与候选来源仍保留。');
-  hooks.progress?.(`概念探索完成：${graph.nodes.length} 个节点，${graph.edges.length} 条关系；正文后台继续补充。`);
+  if (!graph.nodes.some(node => node.status === 'retrieved')) graph.warnings.push(NO_RETRIEVED_SOURCE_WARNING);
+  hooks.progress?.(explorationSummary(graph));
   await publish(); return clone(graph);
+}
+
+export function explorationSummary(graph: KnowledgeGraph): string {
+  if (graph.nodes.length <= 1) return '未找到通过筛选的相关概念或来源；请补充领域词、使用完整名称或调整筛选后继续探索。';
+  if (!graph.nodes.some(node => node.kind !== 'seed' && (node.status === 'retrieved' || node.bodyAvailable)))
+    return '已保留概念与候选，但尚未取得来源正文；可在正文任务查看原因或补充检索词。';
+  return '概念探索已结束；已排队正文继续补充。';
 }

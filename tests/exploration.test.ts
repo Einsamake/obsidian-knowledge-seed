@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DOMParser } from 'linkedom';
-import { Cancelled, clampOptions, type EngineAdapter, type NoteRef, type Options } from '../src/engine';
-import { exploreConcepts } from '../src/exploration';
+import { Cancelled, clampOptions, generateGraph, type EngineAdapter, type NoteRef, type Options } from '../src/engine';
+import { exploreConcepts, explorationSummary } from '../src/exploration';
 import { nodeId, type KnowledgeGraph } from '../src/graph';
 
 Object.assign(globalThis, { DOMParser });
@@ -405,4 +405,29 @@ test('zero-depth topic discovery does not hydrate all search results before retu
   const graph = await exploreConcepts({ kind: 'topic', value: 'Graph' }, f.adapter, opts({ searchLimit: 5, depth: 0 }));
   assert.equal(graph.stats.pagesAttempted, 0); assert.ok(f.requests.every(url => url.includes('/w/api.php?')));
   assert.equal(graph.nodes.find(node => node.title === 'Graph theory')!.reading?.state, 'pending');
+});
+
+test('compound Chinese method topics retain related search results and read their sources', async () => {
+  const title = '流形学习';
+  const url = `https://zh.wikipedia.org/wiki/${encodeURIComponent(title)}`;
+  for (const generate of [exploreConcepts,generateGraph]) {
+    const f = fixture({search:[{title,snippet:'用局部邻域刻画流形的内在结构。'}],pages:{[url]:page(title)}});
+    const graph = await generate({kind:'topic',value:'流形方法'},f.adapter,opts({searchLimit:5,maxPages:1}));
+    assert.equal(graph.nodes.find(node=>node.kind==='seed')!.title,'流形方法');
+    assert.ok(graph.nodes.some(node=>node.title===title&&node.status==='retrieved'));
+    assert.equal(graph.stats.pagesAttempted,1);
+    assert.ok(graph.edges.some(edge=>edge.evidence.some(evidence=>evidence.quote.includes('按核心词匹配：流形'))));
+    assertGraph(graph);
+  }
+});
+
+test('empty exploration reports why nothing grew instead of promising queued body work', async () => {
+  const f=fixture();
+  const graph=await exploreConcepts({kind:'topic',value:'没有匹配来源'},f.adapter,opts({searchLimit:3}));
+  assert.match(explorationSummary(graph),/未找到通过筛选/);
+  assert.equal(graph.stats.pagesAttempted,0);
+  graph.nodes.push({id:'pending',kind:'concept',title:'候选',status:'derived',depth:1,excerpt:''});
+  assert.match(explorationSummary(graph),/尚未取得来源正文/);
+  graph.nodes[1].bodyAvailable=true;
+  assert.match(explorationSummary(graph),/已排队正文继续补充/);
 });

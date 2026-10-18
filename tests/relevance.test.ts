@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { excludedContent, plainSearchSnippet, scoreCandidate, searchQueries } from '../src/relevance';
+import { excludedContent, plainSearchSnippet, scoreCandidate, scoreSearchCandidate, searchQueries } from '../src/relevance';
 
 test('brain-science relevance uses actual topic context and suppresses language navigation', () => {
   assert.equal(scoreCandidate('预测编码', '预测编码理论', '神经系统使用预测编码处理感觉信息', { relevance: 'strict' }).accepted, true);
@@ -47,4 +47,33 @@ test('search expansion is bounded, preserves user terms and makes snippets plain
   assert.deepEqual(searchQueries('predictive coding', ['预测编码', 'brain', 'perception', 'neural', 'ignored']),
     ['predictive coding', '"predictive coding"', '预测编码', 'brain', 'perception', 'neural']);
   assert.equal(plainSearchSnippet('<span class="searchmatch">预测编码</span>&nbsp;&amp; 感觉输入'), '预测编码 & 感觉输入');
+});
+
+test('balanced search recovers Chinese method topics without weakening exact entity matching', () => {
+  for (const title of ['流形','流形学习']) {
+    const ranked=scoreSearchCandidate('流形方法',title,'局部邻域与内在几何结构。');
+    assert.equal(ranked.accepted,true);assert.equal(ranked.expandedTerm,'流形');
+  }
+  assert.equal(scoreSearchCandidate('流形技术','流形学习','').accepted,true);
+  assert.equal(scoreSearchCandidate('流形方法','烹饪','').accepted,false);
+  assert.equal(scoreSearchCandidate('流形方法','流形学习','',{relevance:'strict'}).accepted,false);
+  assert.equal(scoreCandidate('流形方法','流形学习','').accepted,false,'exact body matching must remain unchanged');
+  assert.equal(scoreSearchCandidate('流形方法','流形方法研究','').expandedTerm,undefined);
+});
+
+test('core matching preserves exclusions, navigation rejection and supplied language equivalents', () => {
+  assert.equal(scoreSearchCandidate('流形方法','流形学习','',{excludeTerms:['学习']}).accepted,false);
+  assert.equal(scoreSearchCandidate('英文方法','英文','').accepted,false);
+  assert.equal(scoreSearchCandidate('Brain methods','Brain','').accepted,false);
+  assert.equal(scoreSearchCandidate('流形方法','Manifold learning','').accepted,false);
+});
+
+test('inline search highlights preserve Chinese words and block tags retain boundaries', () => {
+  assert.equal(plainSearchSnippet('微<span class="searchmatch">分</span>几何'),'微分几何');
+  assert.equal(plainSearchSnippet('predic<strong>tive</strong> coding'),'predictive coding');
+  assert.equal(plainSearchSnippet('first<p>second</p><p>third</p>'),'first second third');
+});
+
+test('highlighted context does not discard a related result for a multi-character Chinese topic', () => {
+  assert.equal(scoreSearchCandidate('微分几何','数学','研究微<span class="searchmatch">分</span>几何的结构。').accepted,true);
 });

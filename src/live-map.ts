@@ -1,5 +1,5 @@
 import { clampOptions, type Options, type Seed } from './engine';
-import { addEdge, normalizeText, stableId, type GraphEdge, type GraphNode, type KnowledgeGraph, type Relation } from './graph';
+import { addEdge, normalizeText, stableId, NO_RETRIEVED_SOURCE_WARNING, type GraphEdge, type GraphNode, type KnowledgeGraph, type Relation } from './graph';
 import { safeFolder } from './export';
 import { publicUrl } from './web';
 
@@ -322,5 +322,7 @@ export function mergeLiveGraph(base: KnowledgeGraph, next: KnowledgeGraph, attac
   // own work counters and adds them once to the original exploration.
   for (const key of ['pagesAttempted','notesScanned','requests'] as const)
     graph.stats[key] = attachToId ? base.stats[key]+next.stats[key] : Math.max(base.stats[key],next.stats[key]);
+  if (graph.nodes.some(node => node.status === 'retrieved'))
+    graph.warnings = graph.warnings.filter(warning => warning !== NO_RETRIEVED_SOURCE_WARNING);
   return graph;
 }

@@ -16,13 +16,18 @@ import { integrateNativeRuns } from './integrated-graph';
 import { managedAliases, managedHeader, managedValue } from './ownership';
 import { BackgroundReader, type BackgroundJob } from './background';
 import { readManagedNote, type ManagedNoteState } from './managed-note';
-import { exploreConcepts } from './exploration';
+import { exploreConcepts, explorationSummary } from './exploration';
 import { readLiveMaps, serializeLiveMaps, visibleLiveGraph, pruneLiveMap, mergeLiveGraph, foldOwnedRootFileViews, type LiveMapRecord } from './live-map';
 import { LIVE_MAP_VIEW, LiveMapView, GraphLibraryModal, type LiveMapInfo, type LiveMapControls } from './live-ui';
 import { renderExplorationStrategyControls, explorationStrategyDescription } from './strategy-ui';
 
 interface Settings extends Options { outputFolder: string; exportCanvas: boolean; graphDepth: number; backgroundReading: boolean; liveGraph: boolean }
 const initialSettings: Settings = { ...defaults, readingMode: 'adaptive', explorationStrategy:'focused', outputFolder: 'Knowledge Seed', exportCanvas: false, graphDepth: 3, backgroundReading: true, liveGraph: true };
+const liveReadingLimits = {
+  fast: {depth:2,maxPages:24,maxConcepts:120,maxNotes:6},
+  balanced: {depth:4,maxPages:64,maxConcepts:320,maxNotes:12},
+  deep: {depth:6,maxPages:160,maxConcepts:800,maxNotes:24}
+} as const;
 // Core local Graph clamps its depth control to 5 (verified in Obsidian 1.12.7).
 const displayDepth = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.min(5, Math.max(0, Math.floor(value))) : 3;
 const kindLabels = { seed: '知识起点', web: '公开网页', note: '已有笔记', concept: '提及概念' };
@@ -359,13 +364,7 @@ export default class KnowledgeSeedPlugin extends Plugin {
   }
   private liveOptions(overrides:Partial<Settings>):Options {
     const options=clampOptions({...this.settings,...overrides,generatedFolder:safeFolder(this.settings.outputFolder)});
-    if(options.readingMode==='adaptive') {
-      const pace=options.readingPace??'balanced';
-      const limits=pace==='fast'?{depth:2,maxPages:24,maxConcepts:120,maxNotes:6}
-        :pace==='deep'?{depth:6,maxPages:160,maxConcepts:800,maxNotes:24}:{depth:4,maxPages:64,maxConcepts:320,maxNotes:12};
-      return {...options,...limits};
-    }
-    return options;
+    return options.readingMode==='adaptive' ? {...options,...liveReadingLimits[options.readingPace??'balanced']} : options;
   }
   async startLive(seed:Seed,overrides:Partial<Settings>={}):Promise<string> {
     if(this.disposed||this.busy)throw new Error('请等待当前保存结束。');
@@ -421,7 +420,7 @@ export default class KnowledgeSeedPlugin extends Plugin {
             if(!initialized){await this.openLiveMap(map.id);initialized=true;readyResolve();}
           }
         });
-        checkAbort(controller.signal);map.state='complete';map.message='概念探索已结束；已排队正文继续补充。';
+        checkAbort(controller.signal);map.state='complete';map.message=explorationSummary(visibleLiveGraph(map));
       }catch(error) {
         map.state=controller.signal.aborted?'cancelled':'failed';
         map.message=controller.signal.aborted?'已停止增长，已建立的图谱与正文保留。':`探索停止：${friendlyError(error)}；已保存内容保留。`;

@@ -1,6 +1,6 @@
 {
   "name": "obsidian-knowledge-seed",
-  "version": "1.4.0",
+  "version": "1.4.2",
   "private": true,
   "type": "module",
   "description": "Evidence-linked knowledge maps from a URL, topic or vault note.",

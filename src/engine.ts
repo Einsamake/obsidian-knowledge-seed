@@ -1,7 +1,7 @@
 import { addEdge, addNode, excerptAt, nodeId, normalizeText, usefulConcept, type GraphNode, type KnowledgeGraph, type Relation } from './graph';
 import { fetchWebDocument, publicUrl, type WebDocument } from './web';
 import { cleanKnowledgeTitle, isNoiseLabel } from './titles';
-import { excludedContent, plainSearchSnippet, scoreCandidate, searchQueries, type RelevanceMode } from './relevance';
+import { excludedContent, plainSearchSnippet, scoreCandidate, scoreSearchCandidate, searchQueries, type RelevanceMode } from './relevance';
 import { coalesceGraph } from './dedup';
 
 export type Seed = { kind: 'url' | 'topic' | 'note'; value: string };
@@ -317,11 +317,11 @@ export async function generateGraph(seed: Seed, adapter: EngineAdapter, rawOptio
         for (const item of (Array.isArray(result.query?.search) ? result.query.search : []).slice(0, options.searchLimit)) {
           if (typeof item.title !== 'string') continue;
           const title = item.title, snippet = plainSearchSnippet(typeof item.snippet === 'string' ? item.snippet : '');
-          const rank = scoreCandidate(query, title, `${snippet} ${typeof item.redirecttitle === 'string' ? item.redirecttitle : ''}`, options, 'search');
+          const rank = scoreSearchCandidate(query, title, `${snippet} ${typeof item.redirecttitle === 'string' ? item.redirecttitle : ''}`, options);
           if (!rank.accepted) { filteredWeb++; continue; }
           const url = `https://${language}.wikipedia.org/wiki/${encodeURIComponent(title.replaceAll(' ', '_'))}`;
           const candidate = { url, title, parent: root.id, relation: 'search_match' as const,
-            quote: `检索词：${search}；API 返回标题：${title}${snippet ? '；API 摘要：' + snippet : ''}`,
+            quote: `检索词：${search}；API 返回标题：${title}${rank.expandedTerm ? '；按核心词匹配：' + rank.expandedTerm : ''}${snippet ? '；API 摘要：' + snippet : ''}`,
             depth: 0, queryUrl: endpoint, score: rank.score + (language === options.wikiLanguage ? 0.1 : 0) };
           if (!candidates.has(url) || candidates.get(url)!.score < candidate.score) candidates.set(url, candidate);
         }
@@ -350,7 +350,9 @@ export async function generateGraph(seed: Seed, adapter: EngineAdapter, rawOptio
     progress(`读取网页 ${graph.stats.pagesAttempted}/${options.maxPages}：${item.title ?? url}…`);
     try {
       const doc = await fetchWebDocument(url, request, signal, options.maxBodyChars, Math.min(1_000_000, MAX_TOTAL_WEB_CHARS - retainedWebChars)); checkAbort(signal);
-      const rank = scoreCandidate(query, doc.title, doc.text, options, 'search');
+      const rank = item.relation === 'search_match'
+        ? scoreSearchCandidate(query, doc.title, doc.text, options)
+        : scoreCandidate(query, doc.title, doc.text, options, 'search');
       if (rank.reason === 'navigation' || excludedContent(doc.title, options.excludeTerms)
         || (item.relation === 'search_match' && !rank.accepted)
         || (item.relation === 'links_to' && options.relevance === 'strict' && !rank.accepted)) { filteredWeb++; continue; }

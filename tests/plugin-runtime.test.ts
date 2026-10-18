@@ -1843,6 +1843,18 @@ async function waitLiveFinished(fixture:ReturnType<typeof loadPlugin>,id:string)
   assert.notEqual(currentMap(fixture,id).state,'failed',currentMap(fixture,id).message);
 }
 
+test('a seed-only native map keeps its graph and explains the empty exploration result',async t=>{
+  const fixture=loadPlugin({data:{web:false,backgroundReading:false}});
+  await fixture.plugin.onload();t.after(()=>fixture.plugin.onunload());
+  const id=await fixture.plugin.startLive({kind:'topic',value:'没有匹配的知识主题'},
+    {readingMode:'manual',web:false,maxPages:0,maxNotes:0,maxConcepts:10});
+  await waitLiveFinished(fixture,id);
+  const map=currentMap(fixture,id);
+  assert.equal(map.state,'complete');assert.equal(map.graph.nodes.length,1);
+  assert.match(map.message??'',/未找到通过筛选/);
+  assert.ok(fixture.files.has(map.rootPath));
+});
+
 test('a failed live map resumes an unsaved dot-title concept without losing identities, prose or pruning',async t=>{
   const collisionPath='Knowledge Seed/概念/hack系列.md',ordinary='# 人工笔记\n\n这个同名文件由用户创建，内容必须保留。\n';
   const first=loadPlugin({extraFiles:{[collisionPath]:ordinary},data:{web:false,backgroundReading:false}});
