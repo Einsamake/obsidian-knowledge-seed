@@ -106,8 +106,9 @@ export default class KnowledgeSeedPlugin extends Plugin {
       if (this.busy) { new Notice('请等待当前任务结束。'); return; }
       new DuplicateMergeModal(this.app, this).open();
     } });
-    this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
+    this.registerEvent(this.app.workspace.on('file-menu', (menu, file, _source, leaf) => {
       if (!(file instanceof TFile) || file.extension !== 'md') return;
+      if(leaf)this.selectLiveGraphLeaf(leaf);
       menu.addItem(item => item.setTitle('从此笔记生成知识地图').setIcon('network').onClick(this.liveMenuAction(() => this.openFromFile(file))));
       const path=file.path;
       const owners=this.liveMaps.filter(map=>visibleLiveGraph(map).nodes.some(node=>map.nodePaths[node.id]===path));
@@ -115,9 +116,25 @@ export default class KnowledgeSeedPlugin extends Plugin {
       const targets=current?[current]:owners;
       for(const [index,map] of targets.entries()) {
         const suffix=targets.length>1?`（${map.title} · 图谱 ${index+1}）`:'';
-        menu.addItem(item=>item.setTitle(`Knowledge Seed：沿此节点继续探索${suffix}`).setIcon('network').onClick(this.liveMenuAction(()=>this.expandLiveMap(map.id,path))));
-        if(path!==map.rootPath)menu.addItem(item=>item.setTitle(`Knowledge Seed：从此图剪除节点（保留笔记）${suffix}`).setIcon('scissors').onClick(this.liveMenuAction(()=>this.pruneMap(map.id,path,false))));
-        menu.addItem(item=>item.setTitle(`Knowledge Seed：打开所属图谱${suffix}`).setIcon('folder-search').onClick(this.liveMenuAction(()=>this.openLiveMap(map.id))));
+        const add=(title:string,icon:string,operation:()=>Promise<unknown>|void)=>menu.addItem(item=>item
+          .setTitle(`Knowledge Seed：${title}${suffix}`).setIcon(icon).onClick(this.liveMenuAction(async()=>{
+            // A menu can remain open while a background update or another view
+            // changes membership. Never act on a stale or differently scoped node.
+            const latest=this.liveMaps.find(item=>item.id===map.id);
+            if(!latest||!visibleLiveGraph(latest).nodes.some(node=>latest.nodePaths[node.id]===path))throw new Error('该节点不在当前图谱中，请重新打开菜单。');
+            await operation();
+          })));
+        add('以此节点为中心','focus',()=>this.liveControls().focus!(map.id,path));
+        add('沿此节点继续探索','network',()=>this.expandLiveMap(map.id,path));
+        add('查看关系与来源','list-tree',()=>this.showLiveNodeEvidence(map.id,path));
+        if(path!==map.rootPath) {
+          add('补充正文（后台）','book-open',async()=>{
+            if(await this.retryConceptBody(path))new Notice(this.backgroundPaused?'已加入正文队列；后台阅读已暂停，可在“正文任务”中继续。':'已加入后台正文队列。');
+          });
+          add('从此图剪除节点（保留笔记）','scissors',()=>this.pruneMap(map.id,path,false));
+          add('从此图剪除分支（保留笔记）','git-branch-minus',()=>this.pruneMap(map.id,path,true));
+        }
+        add('打开所属图谱','folder-search',()=>this.openLiveMap(map.id));
       }
     }));
     this.backgroundReader = new BackgroundReader({
@@ -212,6 +229,12 @@ export default class KnowledgeSeedPlugin extends Plugin {
   private notifyLive(): void {for(const listener of this.liveListeners)try{listener();}catch{/* A closed view cannot block a worker. */}}
   private liveMenuAction(operation:()=>Promise<unknown>):()=>void {
     return()=>{if(!this.disposed)void Promise.resolve().then(operation).catch(error=>new Notice(friendlyError(error)));};
+  }
+  showLiveNodeEvidence(id:string,path:string):void {
+    const map=this.liveMaps.find(map=>map.id===id),graph=map&&visibleLiveGraph(map);
+    const node=graph?.nodes.find(node=>map!.nodePaths[node.id]===path);
+    if(!node||!graph)throw new Error('该节点不在当前图谱中。');
+    new LiveNodeEvidenceModal(this.app,node.title,graph,node.id).open();
   }
   private liveLeafMatchesBinding(id:string,leaf:WorkspaceLeaf):boolean {
     const state=leaf.getViewState(),owned=this.liveLeafStates.get(id);
@@ -1476,6 +1499,25 @@ export default class KnowledgeSeedPlugin extends Plugin {
       } finally { this.busy = false; }
     }
   }
+}
+
+class LiveNodeEvidenceModal extends Modal {
+  constructor(app:App,private title:string,private graph:KnowledgeGraph,private nodeId:string){super(app);}
+  onOpen():void {
+    this.setTitle(`${this.title}：关系与来源`);
+    this.modalEl.addClass('knowledge-seed-window');this.contentEl.addClass('knowledge-seed-modal');
+    this.contentEl.createEl('p',{text:'以下为当前图谱保留的关系和来源证据；提及与链接不表示因果关系。',cls:'knowledge-seed-note'});
+    const entries=nodeEvidence(this.graph,this.nodeId);
+    if(!entries.length)this.contentEl.createEl('p',{text:'此节点尚无单独的关系证据，可打开节点笔记查看已保留内容。'});
+    for(const entry of entries) {
+      const item=this.contentEl.createDiv({cls:'knowledge-seed-evidence'});
+      item.createEl('strong',{text:`${entry.fromTitle} → ${relationLabels[entry.relation]} → ${entry.toTitle}`});
+      item.createEl('p',{text:entry.quote});item.createEl('small',{text:`${entry.sourceTitle} · ${entry.method}`});
+      const locator=entry.locator??this.graph.nodes.find(node=>node.id===entry.sourceId)?.locator;
+      if(locator)try{item.createEl('a',{text:'打开来源网页',href:publicUrl(locator),attr:{target:'_blank',rel:'noopener noreferrer'}});}catch{/* A vault path or unsafe URL is plain evidence, not a web link. */}
+    }
+  }
+  onClose():void {this.contentEl.empty();}
 }
 
 class LiveStrategyModal extends Modal {

@@ -2528,7 +2528,7 @@ async function startLocalTabMap(fixture:ReturnType<typeof loadPlugin>,title:stri
   const id=await fixture.plugin.startLive({kind:'topic',value:title},{readingMode:'manual',web:false,maxPages:0,depth:0,maxConcepts:0,maxNotes:0});
   await waitLiveFinished(fixture,id);return currentMap(fixture,id);
 }
-async function capturedNodeMenu(fixture:ReturnType<typeof loadPlugin>,path:string) {
+async function capturedNodeMenu(fixture:ReturnType<typeof loadPlugin>,path:string,leaf?:unknown) {
   const items:Array<{title:string;click:()=>unknown}>=[];
   const menu={addItem:(create:(item:any)=>void)=>{
     const item={title:'',click:()=>undefined as unknown,
@@ -2536,8 +2536,46 @@ async function capturedNodeMenu(fixture:ReturnType<typeof loadPlugin>,path:strin
       onClick(value:()=>unknown){this.click=value;return this;}};
     create(item);items.push(item);
   }};
-  await fixture.emit('file-menu',menu,fixture.plugin.app.vault.getAbstractFileByPath(path));return items;
+  await fixture.emit('file-menu',menu,fixture.plugin.app.vault.getAbstractFileByPath(path),'graph',leaf);return items;
 }
+
+test('node context menus expose focus, evidence, branch pruning and background reading without opening the note',async t=>{
+  const fixture=loadPlugin({data:{web:false,backgroundReading:false}});await fixture.plugin.onload();t.after(()=>fixture.plugin.onunload());
+  const map=await startLocalTabMap(fixture,'右键操作'),path='来源核验.md',id=nodeId('note',path);
+  map.graph.nodes.push({id,kind:'note',title:'来源核验',locator:path,depth:1,status:'discovered',excerpt:'已有笔记'});map.nodePaths[id]=path;
+  const before=new Map(fixture.files),loaded=fixture.loadedLeaves.length,calls:unknown[]=[];
+  fixture.plugin.liveControls=()=>({focus:async(...args:unknown[])=>{calls.push(['focus',...args]);}});
+  fixture.plugin.showLiveNodeEvidence=(...args:unknown[])=>{calls.push(['evidence',...args]);};
+  fixture.plugin.pruneMap=async(...args:unknown[])=>{calls.push(['prune',...args]);};
+  fixture.plugin.backgroundPaused=true;
+  fixture.plugin.retryConceptBody=async(...args:unknown[])=>{calls.push(['body',...args]);return 'menu-job';};
+  const items=await capturedNodeMenu(fixture,path);
+  for(const label of ['以此节点为中心','查看关系与来源','剪除分支','补充正文']){
+    const item=items.find(item=>item.title.includes(label));assert.ok(item,label);item.click();await new Promise(resolve=>setImmediate(resolve));
+  }
+  assert.deepEqual(calls,[['focus',map.id,path],['evidence',map.id,path],['prune',map.id,path,true],['body',path]]);
+  assert.ok(fixture.notices.some(message=>message.includes('已暂停')&&message.includes('正文任务')));
+  assert.deepEqual(fixture.files,before);assert.equal(fixture.loadedLeaves.length,loaded);
+  const rootMenu=await capturedNodeMenu(fixture,map.rootPath);
+  assert.equal(rootMenu.some(item=>item.title.includes('剪除')),false,'the root cannot be cut');
+  assert.equal(rootMenu.some(item=>item.title.includes('补充正文')),false,'the navigation root is not a source');
+});
+
+test('graph context menus bind the actual clicked graph and reject stale actions after a node is cut',async t=>{
+  const fixture=loadPlugin({data:{web:false,backgroundReading:false}});await fixture.plugin.onload();t.after(()=>fixture.plugin.onunload());
+  const first=await startLocalTabMap(fixture,'右键第一图'),second=await startLocalTabMap(fixture,'右键第二图');
+  const path='来源核验.md',id=nodeId('note',path);
+  for(const map of[first,second]){map.graph.nodes.push({id,kind:'note',title:'来源核验',depth:1,status:'discovered',excerpt:''});map.nodePaths[id]=path;}
+  await fixture.plugin.openLiveMap(first.id);
+  const leaf=fixture.leaves.find(item=>item.state?.type==='localgraph'&&item.state.state.file===first.rootPath)!;
+  fixture.plugin.currentLiveId=second.id;
+  const calls:unknown[]=[];fixture.plugin.pruneMap=async(...args:unknown[])=>{calls.push(args);};
+  const items=await capturedNodeMenu(fixture,path,leaf),action=items.find(item=>item.title.includes('剪除分支'))!;
+  assert.ok(action);action.click();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls,[[first.id,path,true]]);
+  first.excludedIds.push(id);action.click();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls.length,1);assert.ok(fixture.notices.some(message=>message.includes('不在当前图谱')));
+  assert.equal(second.excludedIds.length,0);
+});
 
 test('switching existing native graph tabs selects the matching sidebar map without reopening or writing notes',async t=>{
   const fixture=loadPlugin({data:{web:false,backgroundReading:false}});await fixture.plugin.onload();t.after(()=>fixture.plugin.onunload());

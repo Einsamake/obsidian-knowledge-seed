@@ -253,6 +253,22 @@ function fixtureGraph(): KnowledgeGraph {
     ] };
 }
 
+test('node evidence opens directly from a saved graph, escapes source text and closes without reading or exploring',async()=>{
+  const ui=uiFixture(),graph=fixtureGraph(),path='概念/神经元.md';
+  graph.edges[2].evidence[0]={sourceId:'web',quote:'<script>unsafe()</script>神经元',method:'正文提及',locator:'javascript:unsafe()'};
+  ui.plugin.liveMaps=[{id:'evidence-map',title:'脑科学',rootPath:'起点/脑科学.md',graph,nodePaths:{concept:path},excludedIds:[]}];
+  ui.plugin.showLiveNodeEvidence('evidence-map',path);
+  const panel=ui.modals.at(-1)!;
+  assert.equal(panel.title,'神经元：关系与来源');
+  assert.ok(panel.contentEl.textContent?.includes('<script>unsafe()</script>神经元'));
+  assert.ok(panel.contentEl.textContent?.includes('正文提及'));assert.equal(panel.contentEl.querySelector('script'),null);
+  assert.equal(panel.contentEl.querySelector('a[href^="javascript:"]'),null);
+  assert.equal(ui.openedFiles.length,0);
+  panel.close();assert.equal(panel.contentEl.children.length,0);
+  ui.plugin.liveMaps[0].excludedIds=['concept'];
+  assert.throws(()=>ui.plugin.showLiveNodeEvidence('evidence-map',path),/不在当前图谱/);
+});
+
 test('preset redraw keeps one shortcut and shortcut invokes the current start button', async () => {
   const ui=uiFixture(); const seed=await ui.openSeed();
   assert.equal(seed.scope.handlers.length,1);
