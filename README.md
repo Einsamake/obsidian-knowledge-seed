@@ -14,11 +14,11 @@
 
 以下为安装说明，若不想看可以直接丢给AI
 
-**版本：0.14.3（开发测试版）** · Obsidian ≥ 1.6.0 · 已实测 Windows / Obsidian 1.14.4
+**版本：0.14.4（开发测试版）** · Obsidian ≥ 1.6.0 · 已实测 Windows / Obsidian 1.14.4
 
 感谢**GPT6.1Sol Ultra**对这个仓库做出的无私奉献，你夜以继日的努力我都看在眼里(笑
 
-[下载安装包](https://github.com/Einsamake/obsidian-knowledge-seed/releases/tag/v0.14.3) · [更新记录](https://github.com/Einsamake/obsidian-knowledge-seed/blob/main/CHANGELOG.md) · [反馈问题](https://github.com/Einsamake/obsidian-knowledge-seed/issues) · [验证记录](docs/verification.md)
+[下载安装包](https://github.com/Einsamake/obsidian-knowledge-seed/releases/tag/v0.14.4) · [更新记录](https://github.com/Einsamake/obsidian-knowledge-seed/blob/main/CHANGELOG.md) · [反馈问题](https://github.com/Einsamake/obsidian-knowledge-seed/issues) · [验证记录](docs/verification.md)
 
 ## 目录
 
@@ -26,7 +26,7 @@
 
 ## 安装
 
-1. [下载安装包](https://github.com/Einsamake/obsidian-knowledge-seed/releases/download/v0.14.3/knowledge-seed-0.14.3.zip)，解压得到 `knowledge-seed` 文件夹。
+1. [下载安装包](https://github.com/Einsamake/obsidian-knowledge-seed/releases/download/v0.14.4/knowledge-seed-0.14.4.zip)，解压得到 `knowledge-seed` 文件夹。
 2. 将文件夹放进笔记库的 `.obsidian/plugins/`，确认以下三个文件直接位于其中：
 
    `你的笔记库/.obsidian/plugins/knowledge-seed/` → `main.js`、`manifest.json`、`styles.css`
@@ -49,6 +49,7 @@
 | 想做什么 | 在哪里操作 |
 | --- | --- |
 | 找回关闭的图 | **我的知识图谱 → 选择起点 → 打开关系图** |
+| 在大图中局部漫游 | 右键节点 → **进入此处（局部漫游）**；侧栏可调视野、迷雾和返回路线 |
 | 右键操作节点 | 在原生图中右键节点，可设为中心、继续探索、查看来源、补正文或剪枝 |
 | 沿某个概念深入 | 右键节点 → **沿此节点继续探索**，也可在侧栏填写探索方向 |
 | 暂停、继续或停止 | 侧栏 **暂停探索 / 继续探索 / 停止探索** |

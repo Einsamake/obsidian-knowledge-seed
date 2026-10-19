@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { DOMParser } from 'linkedom';
 import { exportGraph, nativeSearch } from '../src/export';
-import { nodeId, stableId, type GraphNode, type KnowledgeGraph } from '../src/graph';
+import { addEdge, nodeId, stableId, type GraphNode, type KnowledgeGraph } from '../src/graph';
 import { defaultPreviewSelection, readablePreviewSelection, previewSelectionSummary } from '../src/preview';
 import { mergeManagedLinks } from '../src/export';
 import { visibleLiveGraph, type LiveMapRecord } from '../src/live-map';
@@ -3004,4 +3004,71 @@ test('revoking a merged alias during eligibility or after queueing refuses autom
     assert.ok(!fixture.frontmatter(entry.path)?.knowledge_seed_merged_ids?.includes(entry.owner),`${scenario}: removed aliases must not be restored`);
     for(const path of['知识图谱.md','来源核验.md',map.rootPath])assert.equal(fixture.files.get(path),before.get(path),scenario);
   }
+});
+
+async function roamingChain(fixture:ReturnType<typeof loadPlugin>,title:string) {
+  const map=await startLocalTabMap(fixture,title),root=map.graph.nodes[0];
+  for(let i=1;i<=6;i++) {
+    const id=`roam-${i}`,path=`漫游验收/节点${i}.md`;
+    fixture.files.set(path,`# 节点 ${i}\n\n人工正文保持。`);
+    map.graph.nodes.push({id,title:`节点${i}`,kind:'note',locator:path,depth:i,status:'discovered',excerpt:'人工正文'});map.nodePaths[id]=path;
+    addEdge(map.graph,i===1?root.id:`roam-${i-1}`,id,'mentions',{sourceId:root.id,quote:'已有关系证据',method:'来源提及'});
+  }
+  await fixture.plugin.openLiveMap(map.id);return map;
+}
+
+test('roaming changes the native view in place, keeps full graph and notes, and remains independent from background work',async t=>{
+  const fixture=loadPlugin({data:{web:false,backgroundReading:false}});await fixture.plugin.onload();t.after(()=>fixture.plugin.onunload());
+  const map=await roamingChain(fixture,'局部漫游'),before=new Map(fixture.files),graph=JSON.stringify(map.graph),controls=fixture.plugin.liveControls();
+  const leaf=fixture.leaves.find(item=>item.state?.type==='localgraph'&&item.state.state.file===map.rootPath)!;
+  leaf.state.state.customViewport={zoom:1.7};leaf.state.state.options.repelStrength=13;leaf.state.state.options.localJumps=3;
+  const leafCount=fixture.leaves.length;
+  await controls.roam(map.id,{type:'enabled',value:true});
+  assert.equal(leaf.state.state.options.localJumps,1);assert.equal(leaf.state.state.options.search,nativeSearch([map.rootPath,map.nodePaths['roam-1']]));
+  await controls.enter(map.id,map.nodePaths['roam-3']);
+  assert.equal(leaf.state.state.file,map.nodePaths['roam-3']);assert.equal(controls.roaming(map.id).center,'roam-3');
+  assert.equal(controls.paths(map.id).length,7,'search can teleport across the whole saved map');
+  assert.equal(controls.current().nodes,7);assert.equal(controls.roaming(map.id).shown,3);
+  map.graph.nodes.push({id:'roam-new',title:'新概念',kind:'concept',depth:4,status:'derived',excerpt:''});map.nodePaths['roam-new']='新概念.md';fixture.files.set('新概念.md','# 新概念');
+  addEdge(map.graph,'roam-3','roam-new','mentions',{sourceId:'roam-3',quote:'新证据',method:'提及'});
+  const reveals=fixture.revealedLeaves.length;
+  await fixture.plugin.syncLiveGraph(map,false);
+  assert.equal(fixture.revealedLeaves.length,reveals);assert.equal(leaf.state.state.file,map.nodePaths['roam-3']);
+  assert.ok(leaf.state.state.options.search.includes('新概念'));
+  assert.equal(leaf.state.state.options.repelStrength,13);assert.deepEqual(leaf.state.state.customViewport,{zoom:1.7});
+  await controls.roam(map.id,{type:'back'});assert.equal(leaf.state.state.file,map.rootPath);
+  await controls.roam(map.id,{type:'forward'});assert.equal(leaf.state.state.file,map.nodePaths['roam-3']);
+  await controls.roam(map.id,{type:'enabled',value:false});
+  assert.equal(controls.roaming(map.id).enabled,false);assert.equal(leaf.state.state.options.search,nativeSearch(Object.values(map.nodePaths)));
+  assert.equal(fixture.leaves.length,leafCount);assert.equal(map.excludedIds.length,0);assert.equal(map.state,'complete');
+  assert.equal(leaf.state.state.options.localJumps,3,'leaving roaming restores the previous native depth');
+  assert.equal(fixture.plugin.backgroundPaused,false);assert.deepEqual(new Map([...fixture.files].filter(([path])=>path!=='新概念.md')),before);
+  map.graph.nodes.pop();map.graph.edges.pop();assert.equal(JSON.stringify(map.graph),graph);
+});
+
+test('saved roaming restores its center and unique native scope without networking or an extra graph tab',async t=>{
+  const fixture=loadPlugin({data:{web:false,backgroundReading:false}});await fixture.plugin.onload();
+  const map=await roamingChain(fixture,'漫游恢复'),controls=fixture.plugin.liveControls();
+  await controls.enter(map.id,map.nodePaths['roam-4']);await controls.roam(map.id,{type:'radius',value:2});
+  const leaf=fixture.leaves.find(item=>item.state?.type==='localgraph'&&item.state.state.file===map.nodePaths['roam-4'])!;
+  await fixture.plugin.saveSettings();fixture.plugin.onunload();(fixture.plugin.app.workspace as any).activeLeaf=leaf;
+  const restored=fixture.createPlugin();await restored.onload();t.after(()=>restored.onunload());
+  const count=fixture.leaves.length;assert.equal(restored.liveControls().roaming(map.id).center,'roam-4');
+  await restored.openLiveMap(map.id);assert.equal(fixture.leaves.length,count);assert.equal(leaf.state.state.options.localJumps,2);
+  await restored.liveControls().roam(map.id,{type:'back'});assert.equal(leaf.state.state.file,map.rootPath);
+  const saved=fixture.saves.at(-1).roaming;assert.equal(saved.length,1);assert.equal(saved[0].mapId,map.id);assert.ok(!JSON.stringify(saved).includes('人工正文'));
+});
+
+test('right-menu roaming validates current membership and pruning cannot leak hidden nodes or change another map view',async t=>{
+  const fixture=loadPlugin({data:{web:false,backgroundReading:false}});await fixture.plugin.onload();t.after(()=>fixture.plugin.onunload());
+  const first=await roamingChain(fixture,'漫游一'),second=await roamingChain(fixture,'漫游二');
+  await fixture.plugin.openLiveMap(first.id);
+  const menu=await capturedNodeMenu(fixture,first.nodePaths['roam-3']),enter=menu.find(item=>item.title.includes('进入此处'))!;
+  assert.ok(enter);enter.click();await waitCondition(()=>fixture.plugin.liveControls().roaming(first.id).center==='roam-3','menu did not navigate');
+  assert.equal(fixture.plugin.liveControls().roaming(second.id).enabled,false);
+  await fixture.plugin.pruneMap(first.id,first.nodePaths['roam-3'],false);
+  assert.equal(fixture.plugin.liveControls().roaming(first.id).center,first.graph.nodes[0].id);
+  enter.click();await new Promise(resolve=>setImmediate(resolve));assert.ok(fixture.notices.some(text=>text.includes('不在当前图谱')));
+  assert.ok(!fixture.plugin.liveDisplay(first).paths.includes(first.nodePaths['roam-3']));
+  assert.equal(second.excludedIds.length,0);assert.ok(fixture.files.has(first.nodePaths['roam-3']));
 });

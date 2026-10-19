@@ -308,3 +308,42 @@ test('controller errors leave the map available, with a readable notice and enab
   assert.match(ui.view.contentEl.textContent, /原图起点已移动/);
   assert.equal(ui.button(ui.view.contentEl, '打开关系图').disabled, false);
 });
+
+test('roaming sidebar separates navigation from discovery and dispatches only explicit view actions',async()=>{
+  const ui=fixture(),actions:unknown[]=[];
+  let info={enabled:true,fog:true,radius:1,limit:40,overviewJumps:5,center:'root',back:[] as string[],forward:[] as string[],visited:['root'],revealed:['root','next'],
+    centerTitle:'QR 分解',total:100,shown:2,nearby:2,route:[{id:'root',title:'QR 分解'}],frontier:[{id:'next',title:'矩阵',hidden:4,next:[{id:'outside',title:'特征值'}]}]};
+  ui.controls.roaming=()=>info;
+  ui.controls.roam=async(id,action)=>{actions.push([id,action]);if(action.type==='enter')info={...info,center:action.node,back:['root']};ui.emit();};
+  ui.controls.enter=async(id,path)=>{actions.push([id,path]);};
+  await ui.view.onOpen();
+  assert.match(ui.view.contentEl.textContent,/视野 2 \/ 全图 100/);assert.match(ui.view.contentEl.textContent,/已到访不代表已掌握/);
+  assert.equal(ui.button(ui.view.contentEl,'后退').disabled,true);
+  await ui.click(ui.button(ui.view.contentEl,'矩阵 → 4 个视野外节点'));
+  assert.deepEqual(JSON.parse(JSON.stringify(actions)),[['one',{type:'enter',node:'next'}]]);assert.equal(ui.button(ui.view.contentEl,'后退').disabled,false);
+  await ui.click(ui.button(ui.view.contentEl,'前往 特征值'));assert.deepEqual(JSON.parse(JSON.stringify(actions.at(-1))),['one',{type:'enter',node:'outside'}]);
+  ui.choose('概念/矩阵.md');await ui.click(ui.button(ui.view.contentEl,'进入此处（局部漫游）'));
+  assert.deepEqual(actions.at(-1),['one','概念/矩阵.md']);assert.deepEqual(ui.calls,[],'navigation does not start discovery');
+  const count=actions.length;await ui.view.onClose();ui.emit();assert.equal(ui.view.contentEl.textContent,'');assert.equal(actions.length,count);
+});
+
+test('roaming controls remain usable when discovery is stopped and report asynchronous navigation errors',async()=>{
+  const ui=fixture();
+  ui.controls.roaming=()=>({enabled:true,fog:false,radius:2,limit:40,overviewJumps:5,center:'root',back:['prev'],forward:[],visited:['root'],revealed:['root'],centerTitle:'起点',total:3,shown:3,nearby:3,route:[{id:'root',title:'起点'}],frontier:[]});
+  ui.controls.roam=async()=>{throw new Error('节点笔记已移动');};
+  await ui.view.onOpen();ui.update({state:'cancelled'});
+  assert.equal(ui.button(ui.view.contentEl,'后退').disabled,false);assert.equal(ui.button(ui.view.contentEl,'展开一圈').disabled,true);
+  await ui.click(ui.button(ui.view.contentEl,'后退'));assert.ok(ui.notices.some(text=>text.includes('节点笔记已移动')));assert.equal(ui.button(ui.view.contentEl,'后退').disabled,false);
+});
+
+test('moving the roaming center selects that node, while background snapshots preserve an in-progress search',async()=>{
+  const ui=fixture();let center='root',centerPath=ui.maps[0].rootPath;
+  ui.controls.roaming=()=>({enabled:true,fog:true,radius:1,limit:40,overviewJumps:5,center,centerPath,back:[],forward:[],visited:[center],revealed:[center],centerTitle:'当前位置',total:3,shown:2,nearby:2,route:[],frontier:[]});
+  ui.controls.roam=async()=>{};await ui.view.onOpen();
+  ui.input(ui.view.contentEl,'查找图谱节点','矩阵');ui.choose('概念/正交矩阵.md');ui.update({nodes:4});
+  assert.equal(ui.field<HTMLInputElement>(ui.view.contentEl,'查找图谱节点').value,'矩阵');
+  assert.equal(ui.field<HTMLSelectElement>(ui.view.contentEl,'选择图中节点').value,'概念/正交矩阵.md');
+  center='matrix';centerPath='概念/矩阵.md';ui.emit();
+  assert.equal(ui.field<HTMLInputElement>(ui.view.contentEl,'查找图谱节点').value,'');
+  assert.equal(ui.field<HTMLSelectElement>(ui.view.contentEl,'选择图中节点').value,centerPath);
+});

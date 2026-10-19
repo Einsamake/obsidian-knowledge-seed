@@ -7,7 +7,7 @@ const destination = resolve('dist/knowledge-seed');
 await mkdir(destination, { recursive: true });
 for (const name of ['main.js', 'manifest.json', 'styles.css', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'])
   await copyFile(name, resolve(destination, name));
-for (const name of ['docs/usage.md', 'docs/validation-0.14.3.md', 'docs/validation-0.14.2.md', 'docs/verification.md', 'docs/parsing-quality.md', 'docs/validation-1.4.1.md', 'docs/validation-1.4.2.md', 'tests/fixtures/NOTICE.md']) {
+for (const name of ['docs/usage.md', 'docs/validation-0.14.4.md', 'docs/validation-0.14.3.md', 'docs/validation-0.14.2.md', 'docs/verification.md', 'docs/parsing-quality.md', 'docs/validation-1.4.1.md', 'docs/validation-1.4.2.md', 'tests/fixtures/NOTICE.md']) {
   const target = resolve(destination, name);
   await mkdir(resolve(target, '..'), { recursive: true });
   await copyFile(name, target);

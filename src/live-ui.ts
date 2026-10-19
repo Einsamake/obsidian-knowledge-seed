@@ -1,4 +1,11 @@
 import { App, ItemView, Modal, Notice, type WorkspaceLeaf } from 'obsidian';
+import type { RoamingAction, RoamingState } from './roaming';
+
+export interface RoamingInfo extends RoamingState {
+  centerTitle:string; centerPath?:string; total:number; shown:number; nearby:number;
+  route:{id:string;title:string}[];
+  frontier:{id:string;title:string;hidden:number;next?:{id:string;title:string}[]}[];
+}
 
 export interface LiveMapInfo {
   id: string;
@@ -27,6 +34,9 @@ export interface LiveMapControls {
   configure?(id:string):Promise<void>;
   openNote?(id:string,path:string):Promise<void>;
   reading?():void;
+  roaming?(id:string):RoamingInfo|undefined;
+  roam?(id:string,action:RoamingAction):Promise<void>;
+  enter?(id:string,path:string):Promise<void>;
 }
 
 export const LIVE_MAP_VIEW = 'knowledge-seed-live-map';
@@ -70,6 +80,17 @@ export class LiveMapView extends ItemView {
   private branchButton?: HTMLButtonElement;
   private focusButton?: HTMLButtonElement;
   private openNoteButton?: HTMLButtonElement;
+  private roamEnabled?:HTMLInputElement;
+  private roamFog?:HTMLInputElement;
+  private roamRadius?:HTMLSelectElement;
+  private roamLimit?:HTMLSelectElement;
+  private roamStatus?:HTMLElement;
+  private roamRoute?:HTMLElement;
+  private roamFrontier?:HTMLElement;
+  private roamKey='';
+  private lastRoamingCenter='';
+  private roamButtons=new Map<string,HTMLButtonElement>();
+  private enterButton?:HTMLButtonElement;
 
   constructor(leaf: WorkspaceLeaf, private readonly controls: LiveMapControls) {
     super(leaf);
@@ -86,6 +107,7 @@ export class LiveMapView extends ItemView {
     this.lifecycle++;
     this.pending = false;
     this.optionKey = '';
+    this.roamKey='';this.lastRoamingCenter='';this.roamButtons.clear();
     this.panelClosed = false;
     this.contentEl.empty();
     this.contentEl.addClass('knowledge-seed-live-panel');
@@ -117,6 +139,7 @@ export class LiveMapView extends ItemView {
       if (map) await this.controls.configure!(map.id);
     }));
     this.contentEl.createEl('p', { text: '关系图与正文在后台分别更新。你可以继续浏览、阅读或关闭此面板。', cls: 'knowledge-seed-note' });
+    if(this.controls.roaming&&this.controls.roam)this.buildRoaming();
     this.contentEl.createEl('h4', { text: '调整当前图谱' });
     const searchLabel = this.contentEl.createEl('label', {text:'查找节点'});
     this.nodeSearch = searchLabel.createEl('input', {type:'search',attr:{'aria-label':'查找图谱节点',placeholder:'输入名称或笔记路径',maxlength:'180'}});
@@ -135,6 +158,7 @@ export class LiveMapView extends ItemView {
     });
     const edits = this.contentEl.createDiv({ cls: 'knowledge-seed-live-actions' });
     if(this.controls.openNote)this.openNoteButton=button(edits,'打开笔记',()=>this.perform(async()=>{const selected=this.selection();await this.controls.openNote!(selected.id,selected.path);}));
+    if(this.controls.enter)this.enterButton=button(edits,'进入此处（局部漫游）',()=>this.perform(async()=>{const selected=this.selection();await this.controls.enter!(selected.id,selected.path);}));
     this.expandButton = button(edits, '沿此节点探索', () => this.perform(async () => {
       const selected = this.selection();
       await this.controls.expand(selected.id, selected.path, this.directionInput?.value.trim() || undefined);
@@ -152,6 +176,64 @@ export class LiveMapView extends ItemView {
     this.contentEl.createEl('p', {text:'原生局部图最多显示中心附近 5 跳。远处分支可选择节点后“以此节点查看”，完整图谱成员继续保留。',cls:'knowledge-seed-note'});
     this.unsubscribe = this.controls.subscribe(() => this.render());
     this.render();
+  }
+
+  private navigate(action:RoamingAction):void {
+    this.perform(async()=>{const map=this.controls.current();if(map)await this.controls.roam!(map.id,action);});
+  }
+  private buildRoaming():void {
+    const section=this.contentEl.createDiv({cls:'knowledge-seed-roaming'});
+    section.createEl('h4',{text:'局部漫游'});
+    const toggle=(text:string,type:'enabled'|'fog')=>{
+      const label=section.createEl('label',{cls:'knowledge-seed-roaming-toggle'});
+      const input=label.createEl('input',{type:'checkbox',attr:{'aria-label':text}});
+      label.createEl('span',{text});
+      input.addEventListener('change',()=>this.navigate({type,value:input.checked}));return input;
+    };
+    this.roamEnabled=toggle('启用局部漫游','enabled');this.roamFog=toggle('迷雾：逐步揭示邻近节点','fog');
+    const select=(text:string,type:'radius'|'limit',values:number[])=>{
+      const label=section.createEl('label',{text});
+      const input=label.createEl('select',{attr:{'aria-label':text}});
+      for(const value of values)input.createEl('option',{text:type==='radius'?`${value} 跳`:`${value} 个节点`,attr:{value:String(value)}});
+      input.addEventListener('change',()=>this.navigate({type,value:Number(input.value)}));return input;
+    };
+    this.roamRadius=select('视野半径','radius',[1,2,3]);this.roamLimit=select('局部节点上限','limit',[20,40,80]);
+    this.roamStatus=section.createEl('p',{attr:{role:'status','aria-live':'polite'}});
+    const actions=section.createDiv({cls:'knowledge-seed-live-actions'});
+    for(const [type,label] of [['back','后退'],['forward','前进'],['home','回到起点'],['reveal','展开一圈']] as const)
+      this.roamButtons.set(type,button(actions,label,()=>this.navigate({type})));
+    this.roamRoute=section.createDiv({cls:'knowledge-seed-roaming-route',attr:{'aria-label':'漫游路线'}});
+    this.roamFrontier=section.createDiv({cls:'knowledge-seed-roaming-frontier',attr:{'aria-label':'视野边界'}});
+    section.createEl('p',{text:'右键节点 → 进入此处，或在下方查找节点后传送。仅改变视野；已到访不代表已掌握。发现新概念请使用“沿此节点探索”，正文任务独立运行。',cls:'knowledge-seed-note'});
+  }
+  private renderRoaming(map?:LiveMapInfo):void {
+    if(!this.roamEnabled)return;
+    const info=map&&this.controls.roaming?.(map.id),enabled=Boolean(info?.enabled),disabled=!map||this.pending;
+    this.roamEnabled.checked=enabled;this.roamEnabled.disabled=disabled;
+    if(this.roamFog){this.roamFog.checked=info?.fog??true;this.roamFog.disabled=disabled||!enabled;}
+    if(this.roamRadius){this.roamRadius.value=String(info?.radius??1);this.roamRadius.disabled=disabled||!enabled;}
+    if(this.roamLimit){
+      const limit=info?.limit??40;
+      if(![...this.roamLimit.options].some(option=>option.value===String(limit)))this.roamLimit.createEl('option',{text:`${limit} 个节点`,attr:{value:String(limit)}});
+      this.roamLimit.value=String(limit);this.roamLimit.disabled=disabled||!enabled;
+    }
+    this.roamStatus?.setText(info&&enabled?`当前位置：${info.centerTitle} · 视野 ${info.shown} / 全图 ${info.total} · 已揭示 ${info.revealed.length} · 已到访 ${info.visited.length}${info.nearby>info.shown?' · 已达局部上限，可移动或提高上限':''}`:'启用后仅显示当前位置附近，完整图谱仍保留。');
+    for(const [type,control] of this.roamButtons)control.disabled=disabled||!enabled||Boolean(type==='back'&&!info?.back.length||type==='forward'&&!info?.forward.length||type==='reveal'&&!info?.frontier.length);
+    const key=JSON.stringify([map?.id,enabled,info?.route,info?.frontier,disabled]);
+    if(key===this.roamKey)return;
+    this.roamKey=key;this.roamRoute?.empty();this.roamFrontier?.empty();
+    if(!enabled||!info||!map)return;
+    this.roamRoute?.createEl('small',{text:'最近路线（点击可返回）'});
+    for(const node of info.route){const b=button(this.roamRoute!,node.title,()=>this.navigate({type:'enter',node:node.id}));b.disabled=disabled||node.id===info.center;}
+    this.roamFrontier?.createEl('small',{text:info.frontier.length?'边界节点 · 相连但不在当前视野':'当前视野没有更多相连节点'});
+    const destinations=new Set<string>();
+    for(const item of info.frontier){
+      const row=this.roamFrontier!.createDiv({cls:'knowledge-seed-roaming-edge'});
+      const b=button(row,`${item.title} → ${item.hidden} 个视野外节点`,()=>this.navigate({type:'enter',node:item.id}));b.disabled=disabled||item.id===info.center;
+      for(const next of item.next??[])if(!destinations.has(next.id)&&destinations.size<8){
+        destinations.add(next.id);const enter=button(row,`前往 ${next.title}`,()=>this.navigate({type:'enter',node:next.id}));enter.disabled=disabled;
+      }
+    }
   }
 
   /** Capture only a currently present real node; stale UI never supplies a typed path. */
@@ -195,6 +277,16 @@ export class LiveMapView extends ItemView {
       if (this.nodeSearch) this.nodeSearch.value = '';
       if (this.directionInput) this.directionInput.value = '';
     }
+    const roaming=map&&this.controls.roaming?.(map.id);
+    const centerKey=roaming?.enabled?`${map?.id}:${roaming.center}`:'';
+    if(centerKey!==this.lastRoamingCenter){
+      this.lastRoamingCenter=centerKey;
+      if(roaming?.enabled&&roaming.centerPath&&paths.some(item=>item.path===roaming.centerPath)){
+        this.selectedPath=roaming.centerPath;
+        if(this.nodeSearch)this.nodeSearch.value='';
+        if(this.directionInput)this.directionInput.value='';
+      }
+    }
     const query = this.nodeSearch?.value.trim().toLocaleLowerCase() ?? '';
     const matching = paths.filter(node => !query || `${node.title}\n${node.path}`.toLocaleLowerCase().includes(query));
     if (!matching.some(item => item.path === this.selectedPath)) this.selectedPath = matching[0]?.path ?? '';
@@ -231,10 +323,12 @@ export class LiveMapView extends ItemView {
     if (this.expandButton) this.expandButton.disabled = !available;
     if (this.focusButton) this.focusButton.disabled = !available;
     if (this.openNoteButton) this.openNoteButton.disabled = !available;
+    if(this.enterButton)this.enterButton.disabled=!available;
     const removable = available && this.selectedPath !== map?.rootPath;
     if (this.pruneButton) this.pruneButton.disabled = !removable;
     if (this.branchButton) this.branchButton.disabled = !removable;
     if (this.directionInput) this.directionInput.disabled = !available;
+    this.renderRoaming(map);
   }
 
   async onClose(): Promise<void> {

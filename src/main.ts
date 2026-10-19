@@ -20,6 +20,7 @@ import { exploreConcepts, explorationSummary } from './exploration';
 import { readLiveMaps, serializeLiveMaps, visibleLiveGraph, pruneLiveMap, mergeLiveGraph, foldOwnedRootFileViews, type LiveMapRecord } from './live-map';
 import { LIVE_MAP_VIEW, LiveMapView, GraphLibraryModal, type LiveMapInfo, type LiveMapControls } from './live-ui';
 import { renderExplorationStrategyControls, explorationStrategyDescription } from './strategy-ui';
+import { moveRoaming, projectRoaming, readRoaming, type RoamingAction, type RoamingState } from './roaming';
 
 interface Settings extends Options { outputFolder: string; exportCanvas: boolean; graphDepth: number; backgroundReading: boolean; liveGraph: boolean }
 const initialSettings: Settings = { ...defaults, readingMode: 'adaptive', explorationStrategy:'focused', outputFolder: 'Knowledge Seed', exportCanvas: false, graphDepth: 3, backgroundReading: true, liveGraph: true };
@@ -70,6 +71,8 @@ export default class KnowledgeSeedPlugin extends Plugin {
   private liveControlIntents = new Map<string,'paused'|'cancelled'|'running'>();
   private liveEnabled = new Set<string>();
   private liveCenters = new Map<string,string>();
+  private roamingStates = new Map<string,RoamingState>();
+  private restoreOverviewDepth = new Set<string>();
 
   async onload(): Promise<void> {
     const loaded = (await this.loadData()) ?? {};
@@ -77,6 +80,7 @@ export default class KnowledgeSeedPlugin extends Plugin {
     if (loaded.lastRun && typeof loaded.lastRun.rootPath === 'string' && typeof loaded.lastRun.search === 'string') this.lastRun = loaded.lastRun;
     this.history = readHistory(loaded.history);
     this.liveMaps = readLiveMaps(loaded.liveMaps);
+    this.roamingStates = readRoaming(loaded.roaming, this.liveMaps.map(map=>({id:map.id,graph:visibleLiveGraph(map)})));
     this.currentLiveId = this.liveMaps.some(map=>map.id===loaded.currentLiveId) ? loaded.currentLiveId : this.liveMaps[0]?.id;
     if (this.lastRun) this.restoreNativeLeaves(this.lastRun);
     this.addSettingTab(new KnowledgeSeedSettings(this.app, this));
@@ -125,6 +129,7 @@ export default class KnowledgeSeedPlugin extends Plugin {
             await operation();
           })));
         add('以此节点为中心','focus',()=>this.liveControls().focus!(map.id,path));
+        add('进入此处（局部漫游）','footprints',()=>this.roamMap(map.id,{type:'enter',node:this.liveNodeId(map.id,path)}));
         add('沿此节点继续探索','network',()=>this.expandLiveMap(map.id,path));
         add('查看关系与来源','list-tree',()=>this.showLiveNodeEvidence(map.id,path));
         if(path!==map.rootPath) {
@@ -221,7 +226,8 @@ export default class KnowledgeSeedPlugin extends Plugin {
     if(refreshGate && !this.liveWriting)this.backgroundReader?.refreshGate();
     const snapshot = JSON.parse(JSON.stringify({...this.settings,lastRun:this.lastRun,history:this.history,
       backgroundPaused:this.backgroundPaused,readingTasks:this.backgroundReader?.exportHistory()??[],
-      liveMaps:serializeLiveMaps(this.liveMaps),currentLiveId:this.currentLiveId}));
+      liveMaps:serializeLiveMaps(this.liveMaps),currentLiveId:this.currentLiveId,
+      roaming:this.liveMaps.filter(map=>this.roamingStates.has(map.id)).map(map=>({mapId:map.id,state:projectRoaming(visibleLiveGraph(map),this.roamingStates.get(map.id)).state}))}));
     const task = this.settingsSaveTask.catch(()=>{}).then(()=>{if(!this.disposed)return this.saveData(snapshot);});
     this.settingsSaveTask = task;
     await task;
@@ -248,8 +254,8 @@ export default class KnowledgeSeedPlugin extends Plugin {
       ||typeof file!=='string'||typeof search!=='string')return[];
     return this.liveMaps.filter(map=>{
       if(!map.rootPath)return false;
-      const paths=visibleLiveGraph(map).nodes.map(node=>map.nodePaths[node.id]).filter(Boolean);
-      return paths.includes(file)&&search===nativeSearch(paths);
+      const {paths,file:center,projection}=this.liveDisplay(map);
+      return paths.includes(file)&&search===nativeSearch(paths)&&(!projection.state.enabled||file===center);
     });
   }
   private selectLiveGraphLeaf(leaf?:WorkspaceLeaf):void {
@@ -274,6 +280,35 @@ export default class KnowledgeSeedPlugin extends Plugin {
     }
     if(map&&this.currentLiveId!==map.id){this.currentLiveId=map.id;this.notifyLive();}
   }
+  private liveDisplay(map:LiveMapRecord) {
+    const graph=visibleLiveGraph(map),projection=projectRoaming(graph,this.roamingStates.get(map.id));
+    const nodes=projection.state.enabled?projection.nodes:graph.nodes;
+    const paths=nodes.map(node=>map.nodePaths[node.id]).filter(Boolean);
+    const center=projection.state.enabled?map.nodePaths[projection.state.center]:this.liveCenters.get(map.id);
+    return {paths,file:center&&paths.includes(center)?center:map.rootPath,projection};
+  }
+  private liveNodeId(id:string,path:string):string {
+    const map=this.liveMaps.find(map=>map.id===id);
+    const node=map&&visibleLiveGraph(map).nodes.find(node=>map.nodePaths[node.id]===path);
+    if(!node)throw new Error('该节点不在当前图谱中。');
+    return node.id;
+  }
+  async roamMap(id:string,action:RoamingAction):Promise<void> {
+    const map=this.liveMaps.find(map=>map.id===id);
+    if(!map)throw new Error('图谱记录不存在。');
+    const state=moveRoaming(visibleLiveGraph(map),this.roamingStates.get(id),action);
+    if(state.enabled&&!(this.app.vault.getAbstractFileByPath(map.nodePaths[state.center]) instanceof TFile))throw new Error('节点笔记已移动或删除，请重新打开图谱以恢复路径。');
+    if(state.enabled&&!this.roamingStates.get(id)?.enabled){
+      const leaf=this.liveLeaves.get(id),options=leaf?.getViewState().state?.options as Record<string,unknown>|undefined;
+      if(leaf&&this.liveLeafMatchesBinding(id,leaf)&&typeof options?.localJumps==='number')state.overviewJumps=displayDepth(options.localJumps);
+    }
+    this.roamingStates.set(id,state);this.currentLiveId=id;
+    if(action.type==='enabled'&&!action.value)this.restoreOverviewDepth.add(id);
+    if(state.enabled)this.liveCenters.set(id,map.nodePaths[state.center]);
+    await this.syncLiveGraph(map,true);
+    this.notifyLive();await this.saveSettings(false);
+    if(action.type==='enter')await this.showLiveControls();
+  }
   private liveInfo(map:LiveMapRecord): LiveMapInfo {
     const graph=visibleLiveGraph(map);
     return {id:map.id,title:map.title,rootPath:map.rootPath,state:map.state,nodes:graph.nodes.length,edges:graph.edges.length,
@@ -289,6 +324,17 @@ export default class KnowledgeSeedPlugin extends Plugin {
       subscribe:listener=>{this.liveListeners.add(listener);return()=>this.liveListeners.delete(listener);},
       open:id=>this.openLiveMap(id),pause:id=>this.pauseLiveMap(id),resume:id=>this.resumeLiveMap(id),stop:id=>this.stopLiveMap(id),
       reading:()=>this.openBackgroundTasks(),
+      roaming:id=>{
+        const map=this.liveMaps.find(map=>map.id===id);if(!map)return;
+        const p=this.liveDisplay(map).projection;
+        return {...p.state,total:p.total,shown:p.nodes.length,nearby:p.nearby,
+          centerTitle:map.graph.nodes.find(node=>node.id===p.state.center)?.title??map.title,centerPath:map.nodePaths[p.state.center],
+          route:[...p.state.back.slice(-6),p.state.center].map(id=>({id,title:map.graph.nodes.find(node=>node.id===id)?.title??id})),
+          frontier:p.frontier.slice(0,8).map(item=>({id:item.node.id,title:item.node.title,hidden:item.hidden,
+            next:item.next.map(node=>({id:node.id,title:node.title}))}))};
+      },
+      roam:(id,action)=>this.roamMap(id,action),
+      enter:async(id,path)=>this.roamMap(id,{type:'enter',node:this.liveNodeId(id,path)}),
       openNote:async(id,path)=>{
         const map=this.liveMaps.find(item=>item.id===id);
         if(!map||!visibleLiveGraph(map).nodes.some(node=>map.nodePaths[node.id]===path))throw new Error('该节点不在当前图谱中。');
@@ -298,6 +344,7 @@ export default class KnowledgeSeedPlugin extends Plugin {
       configure:async id=>{const map=this.liveMaps.find(map=>map.id===id);if(!map)throw new Error('图谱记录不存在。');new LiveStrategyModal(this.app,this,map).open();},
       prune:(id,path,branch)=>this.pruneMap(id,path,branch),expand:(id,path,direction)=>this.expandLiveMap(id,path,direction),
       focus:async(id,path)=>{const map=this.liveMaps.find(map=>map.id===id);if(!map||!visibleLiveGraph(map).nodes.some(node=>map.nodePaths[node.id]===path))throw new Error('该节点不在当前图谱中。');
+        if(this.roamingStates.get(id)?.enabled){await this.roamMap(id,{type:'enter',node:this.liveNodeId(id,path)});return;}
         this.liveCenters.set(id,path);await this.syncLiveGraph(map,true);},
       paths:id=>{const map=this.liveMaps.find(map=>map.id===id);return map?visibleLiveGraph(map).nodes
         .filter(node=>Boolean(map.nodePaths[node.id])).map(node=>({path:map.nodePaths[node.id],title:node.kind==='seed'?`${node.title}（图谱入口）`:node.title})):[];}
@@ -357,9 +404,8 @@ export default class KnowledgeSeedPlugin extends Plugin {
       }
     }
     if(!leaf && !activate)return; // Closing a tab never causes a worker to reopen it.
+    const {paths,file,projection}=this.liveDisplay(map),search=nativeSearch(paths);
     if(!leaf) {
-      const search=nativeSearch(visibleLiveGraph(map).nodes.map(node=>map.nodePaths[node.id]).filter(Boolean));
-      const center=this.liveCenters.get(map.id),file=center&&Object.values(map.nodePaths).includes(center)?center:map.rootPath;
       const matches=workspace.getLeavesOfType('localgraph').filter(item=>{const state=item.getViewState();
         if(state.pinned!==true||state.state?.file!==file||(state.state?.options as Record<string,unknown>|undefined)?.search!==search)return false;
         if([...this.liveLeaves].some(([id,bound])=>id!==map.id&&bound===item))return false;
@@ -371,12 +417,13 @@ export default class KnowledgeSeedPlugin extends Plugin {
     }
     const old=leaf.getViewState();
     const oldOptions=(old.state?.options??{}) as Record<string,unknown>;
-    const paths=visibleLiveGraph(map).nodes.map(node=>map.nodePaths[node.id]).filter(Boolean);
-    const center=this.liveCenters.get(map.id);
-    const file=center&&paths.includes(center)?center:map.rootPath,search=nativeSearch(paths);
+    const viewOptions:Record<string,unknown>={localJumps:5,localBacklinks:true,localForelinks:true,localInterlinks:true,
+      showTags:false,showAttachments:false,hideUnresolved:true,...oldOptions,search};
+    if(projection.state.enabled)viewOptions.localJumps=projection.state.radius;
+    else if(this.restoreOverviewDepth.has(map.id))viewOptions.localJumps=projection.state.overviewJumps;
     leaf.setPinned(true);
     await leaf.setViewState({...old,type:'localgraph',active:activate,pinned:true,state:{...old.state,file,
-      options:{localJumps:5,localBacklinks:true,localForelinks:true,localInterlinks:true,showTags:false,showAttachments:false,hideUnresolved:true,...oldOptions,search}}});
+      options:viewOptions}});
     if(this.disposed)return;
     if(typeof leaf.loadIfDeferred==='function')await leaf.loadIfDeferred();
     if(activate&&typeof workspace.revealLeaf==='function')await workspace.revealLeaf(leaf);
@@ -384,6 +431,7 @@ export default class KnowledgeSeedPlugin extends Plugin {
     if(actual.type==='localgraph'&&actual.pinned===true&&typeof actualFile==='string'&&typeof actualSearch==='string')
       this.liveLeafStates.set(map.id,{file:actualFile,search:actualSearch});
     else this.liveLeafStates.delete(map.id);
+    this.restoreOverviewDepth.delete(map.id);
   }
   private liveOptions(overrides:Partial<Settings>):Options {
     const options=clampOptions({...this.settings,...overrides,generatedFolder:safeFolder(this.settings.outputFolder)});

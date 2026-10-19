@@ -81,6 +81,13 @@
 .knowledge-seed-live-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .knowledge-seed-live-actions button { white-space: normal; height: auto; min-height: 32px; }
 .knowledge-seed-live-counts { color: var(--text-accent); line-height: 1.65; }
+.knowledge-seed-roaming { border-block: 1px solid var(--background-modifier-border); margin-top: 16px; padding-bottom: 12px; }
+.knowledge-seed-live-panel .knowledge-seed-roaming-toggle { display: flex; align-items: center; }
+.knowledge-seed-live-panel .knowledge-seed-roaming-toggle input[type=checkbox] { appearance: auto; width: 16px; min-width: 16px; height: 16px; margin: 0; accent-color: var(--interactive-accent); }
+.knowledge-seed-roaming-route, .knowledge-seed-roaming-frontier { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.knowledge-seed-roaming-route small, .knowledge-seed-roaming-frontier small { width: 100%; color: var(--text-muted); }
+.knowledge-seed-roaming-edge { display: flex; flex-wrap: wrap; gap: 5px; width: 100%; }
+.knowledge-seed-roaming-route button, .knowledge-seed-roaming-frontier button { white-space: normal; height: auto; min-height: 30px; max-width: 100%; overflow-wrap: anywhere; }
 .knowledge-seed-live-panel button:focus-visible, .knowledge-seed-live-panel select:focus-visible,
 .knowledge-seed-live-panel input:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
 @media (max-width: 600px) {
